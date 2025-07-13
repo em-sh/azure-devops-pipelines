@@ -1,0 +1,88 @@
+trigger: none
+
+stages:
+  - stage: 'Build'
+    displayName: 'Build the web application'
+    jobs:
+      - job: build 
+        pool:
+          vmImage: 'windows-latest'
+
+        variables:
+          solution: '**/*.sln'
+          buildPlatform: 'Any CPU'
+          buildConfiguration: 'Release'
+
+        steps:
+        - task: NuGetToolInstaller@1
+
+        - task: NuGetCommand@2
+          inputs:
+            restoreSolution: '$(solution)'
+
+        - task: VSBuild@1
+          inputs:
+            solution: '$(solution)'
+            msbuildArgs: '/p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:PackageLocation="$(build.artifactStagingDirectory)"'
+            platform: '$(buildPlatform)'
+            configuration: '$(buildConfiguration)'
+
+        - task: VSTest@2
+          inputs:
+            platform: '$(buildPlatform)'
+            configuration: '$(buildConfiguration)'
+
+        - task: PublishBuildArtifacts@1
+          displayName: 'Publish Artifact'
+          inputs:
+            PathtoPublish: '$(build.artifactstagingdirectory)'
+            ArtifactName: 'drop'
+          condition: succeededOrFailed()   
+  - stage: 'Deploy'
+    dependsOn: Build
+    displayName: 'Deploy the web application'  
+    jobs:
+    - deployment: 'DeployToDev'
+      displayName: 'Deploy the web application'
+      variables:
+        Parameters.IISDeploymentType: 'IISWebsite'
+        Parameters.ActionIISWebsite: 'CreateOrUpdateWebsite'
+        Parameters.WebsiteName: 'Default Web Site'
+        Parameters.WebsitePhysicalPath: '%SystemDrive%\inetpub\wwwroot\AspNetDemo'
+        Parameters.AddBinding: true
+        Parameters.VirtualPathForApplication: ''
+        Parameters.AppPoolName: ''
+        Parameters.Package: '$(Pipeline.Workspace)\drop\*.zip'
+        Parameters.TakeAppOfflineFlag: true
+      environment: 
+        name: Dev
+        resourceType: VirtualMachine
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - download: current
+                artifact: drop
+              - task: PowerShell@2
+                inputs:
+                  targetType: inline
+                  script: |
+                    Enable-WindowsOptionalFeature –online –featurename IIS-WebServerRole
+                    Enable-WindowsOptionalFeature -Online -FeatureName IIS-ASPNET45 -All
+              - task: IISWebAppManagementOnMachineGroup@0
+                displayName: 'IIS Web App Manage'
+                inputs:
+                  IISDeploymentType: '$(Parameters.IISDeploymentType)'
+                  ActionIISWebsite: '$(Parameters.ActionIISWebsite)'
+                  WebsiteName: '$(Parameters.WebsiteName)'
+                  AddBinding: '$(Parameters.AddBinding)'
+                  ParentWebsiteNameForVD: '$(Parameters.WebsiteName)'
+                  VirtualPathForApplication: '$(Parameters.VirtualPathForApplication)'
+                  AppPoolName: '$(Parameters.AppPoolName)'
+              - task: IISWebAppDeploymentOnMachineGroup@0
+                displayName: 'IIS Web App Deploy'
+                inputs:
+                    WebSiteName: '$(Parameters.WebsiteName)'
+                    Package: '$(Parameters.Package)'
+                    TakeAppOfflineFlag: True
+                    XmlVariableSubstitution: True
