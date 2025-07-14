@@ -1,0 +1,57 @@
+trigger: none
+
+
+variables:
+  Parameters.IISDeploymentType: 'IISWebsite'
+  Parameters.ActionIISWebsite: 'CreateOrUpdateWebsite'
+  Parameters.WebsiteName: 'Default Web Site'
+  Parameters.WebsitePhysicalPath: '%SystemDrive%\inetpub\wwwroot\AspNetDemo'
+  Parameters.AddBinding: true
+  Parameters.VirtualPathForApplication: ''
+  Parameters.AppPoolName: ''
+  Parameters.Package: '$(System.ArtifactDirectory)/ciBuild/drop/*.zip'
+  Parameters.TakeAppOfflineFlag: true
+
+jobs:
+  - deployment: deploytodev
+    displayName: 'Deploy to Dev Environment'
+    environment:
+      name: Dev
+      resourceType: VirtualMachine
+
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - task: DownloadBuildArtifacts@1
+              inputs:
+                buildType: 'specific'
+                project: 'c6583815-29d1-475f-9995-a6afaa1dd46d'
+                pipeline: '1065'
+                buildVersionToDownload: 'latest'
+                downloadType: 'single'
+                artifactName: 'drop'
+                downloadPath: '$(System.ArtifactsDirectory)'
+            - task: PowerShell@2
+              inputs:
+                targetType: inline
+                script: |
+                  Enable-WindowsOptionalFeature –online –featurename IIS-WebServerRole
+                  Enable-WindowsOptionalFeature -Online -FeatureName IIS-ASPNET45 -All
+            - task: IISWebAppManagementOnMachineGroup@0
+              displayName: 'IIS Web App Manage'
+              inputs:
+                IISDeploymentType: '$(Parameters.IISDeploymentType)'
+                ActionIISWebsite: '$(Parameters.ActionIISWebsite)'
+                WebsiteName: '$(Parameters.WebsiteName)'
+                AddBinding: '$(Parameters.AddBinding)'
+                ParentWebsiteNameForVD: '$(Parameters.WebsiteName)'
+                VirtualPathForApplication: '$(Parameters.VirtualPathForApplication)'
+                AppPoolName: '$(Parameters.AppPoolName)'
+            - task: IISWebAppDeploymentOnMachineGroup@0
+              displayName: 'IIS Web App Deploy'
+              inputs:
+                WebSiteName: '$(Parameters.WebsiteName)'
+                Package: '$(Parameters.Package)'
+                TakeAppOfflineFlag: true
+                XmlVariableSubstitution: true
